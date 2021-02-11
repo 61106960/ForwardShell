@@ -629,7 +629,7 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.2.0'
+    __version__ = '0.2.1'
 
     parser = argparse.ArgumentParser(
         add_help = True,
