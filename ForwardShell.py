@@ -545,7 +545,7 @@ class WebShell(object):
                 result = re.search(pattern, raw_input, re.DOTALL)
                 return result.group(1).strip('\n')
             else:
-                return raw_input
+                return raw_input.strip('\n')
 
     # Helper Module to get the file system path of a programm
     def GetBinPath(self, file):
