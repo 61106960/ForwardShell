@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ForwardShell"
-version = "0.2.5"
+version = "0.3.0"
 description = "Exploits a simple WebRCE and supports PTY upgrade, Bind- and ReveseShells, File Up- and Download"
 authors = ["Alexander Sturz <alex@sturz.org>"]
 
