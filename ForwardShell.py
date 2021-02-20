@@ -119,7 +119,7 @@ class WebShell(object):
         if CheckConnction:
              CheckConnction = CheckConnction.rstrip()
         if CheckConnction == f'{self.stdout}':
-            print(f"[+] Connection to {self.uri_parser(self.url)} established")
+            print(f"[+] Connection to {self.uri_parser(self.url)} with ID {self.session} established")
             ClearOutput = f'{self.ECHO} -n "" > {self.stdout}'
             self.RunRawCmd(ClearOutput)
         else:
@@ -457,11 +457,11 @@ class WebShell(object):
         self.thread.join()
         print(f'[*] Cleaning up unneeded sessions and files')
 
-        if force == True:
-            if self.verbose: print(f'[VERBOSE] Terminating all Shells')
+        if force:
+            print(f'[!] Terminating all running shells')
             checkProcess = f'{self.PS} -aux | {self.GREP} -e {self.stdin.split(".")[0]} -e "-c import pty; print(\\\"Fwdsh-"'
         else:
-            if self.verbose: print(f'[VERBOSE] Terminating {__progname__} with SessionID: {self.session}')
+            print(f'[!] Terminating {__progname__} with ID {self.session}')
             checkProcess = f'{self.PS} -aux | {self.GREP} -e {self.stdin} -e "-c import pty; print(\\\"Fwdsh-{self.session}"'
         
         # read result of ps -aux and kill processes
@@ -498,12 +498,12 @@ class WebShell(object):
 # Command = ? resume                                                                 #
 #                                                                                    #
 # Functions are:                                                                     #
-# sess_resume           Resumes a open session                                       # 
+# session_resume           Resumes a open session                                    # 
 #                                                                                    #
 ######################################################################################
 
     # Get all open sessions and resume a specific one
-    def sess_resum(self):
+    def session_resume(self):
         OpenSessions = f'{self.LS} {self.stdin.split(".")[0]}.*'
         raw_result = self.WriteCmd(OpenSessions, fifo=False)
         result = self.DisplayResp(raw_result).split('\n')
@@ -799,7 +799,7 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.4.0'
+    __version__ = '0.4.1'
 
     parser = argparse.ArgumentParser(
         add_help=True,
@@ -842,7 +842,7 @@ if __name__ == '__main__':
     group.add_argument('-revshell', action='store', metavar='', choices=['bash', 'python', 'perl'], default = 'Bash', help='Kind of ReverseShell [Bash, Python, Perl; default=Bash]')
     group.add_argument('-bindshell', action='store', metavar='', choices=['python', 'netcat', 'perl'], default = 'Python', help='Kind of BindShell [Python, Netcat, Perl; default=Python]')
     group.add_argument('-speed', action='store', metavar='', choices=['insane', 'fast', 'medium', 'slow'], default = 'fast', help='Network speed to the target [Insane, Fast, Medium, Slow; default=Fast]')
-    group.add_argument('-path', action='store', metavar='', default = '/dev/shm', help='Default {__progname__} working path; Change it to /tmp if /dev/shm is not available')
+    group.add_argument('-path', action='store', metavar='', default = '/dev/shm', help=f'Default {__progname__} working path; Change it to /tmp if /dev/shm is not available')
 
     options = parser.parse_args()
 
@@ -939,7 +939,7 @@ if __name__ == '__main__':
                             S.killCmd()
                     
                     elif Option.casefold() == '?resume':
-                            S.sess_resum()
+                            S.session_resume()
 
                     elif Option.startswith('?'):
                         print(f'[ERROR] Function {Option} is unknown')
