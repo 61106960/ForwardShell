@@ -2,7 +2,7 @@
 Exploits a simple Web application RCE on Linux systems and builds a semiautomatic shell.
 It supports a PTY upgrade, Bind- and ReverseShells with different flavours, File Up- and Download and resume orphaned sessions.
 
-![](https://github.com/61106960/ForwardShell/raw/main/images/ForwardShell.png)
+![](https://github.com/61106960/ForwardShell/raw/main/images/ForwardShell_small.png)
 
 ForwardShell is a Python tool to exploit a common Web application command execution on Linux operating systems. It uses MKFIFO to setup a semiautomatic shell, which can be enhanced even more with a Python PTY. Due to the used technology it support Linux OS targets only. Maybe a light ForwardShell version for Windows OS will be developed too ...  
 
