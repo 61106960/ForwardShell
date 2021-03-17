@@ -64,7 +64,10 @@ class WebShell(object):
         # Set up proxy
         self.proxies = {}
         if options.proxy:
-            self.proxies = {'http': f'{options.proxy}'}
+            self.proxies = {
+                'http': f'{options.proxy}',
+                'https': f'{options.proxy}'
+            }
             if self.verbose: print(f"[VERBOSE] Using proxy {self.proxies['http']}")
 
         # Setup additional headers
@@ -804,13 +807,13 @@ class WebShell(object):
 # Process command-line arguments.
 if __name__ == '__main__':
     __progname__ = 'ForwardShell'
-    __version__ = '0.4.2'
+    __version__ = '0.4.3'
 
     parser = argparse.ArgumentParser(
         add_help=True,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=f'{__progname__} v{__version__} - Exploits a simple Web application RCE on Linux systems and builds a semiautomatic shell',
-        usage=f'python3 {__progname__}.py -url <url> [-data <post-data>] [-prefix <prefix>] [-suffix <suffix>] [-P <proxy>]',
+        usage=f'python3 {__progname__}.py -url <url> [-data <post-data>] [-prefix <prefix>] [-suffix <suffix>] [-proxy <proxy>]',
         epilog=('Program Usage Examples:\n'
         'PUT the keyword <RCE> in a GET request, a POST data body or even in an additional header\n'
         'and it will be automatically replaced with the command you type in the shell\n'
