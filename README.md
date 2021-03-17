@@ -21,7 +21,7 @@ ForwardShell is a Python tool to exploit a common Web application command execut
 # How To Start
 
 ```
-usage: python3 ForwardShell.py -url <url> [-data <post-data>] [-prefix <prefix>] [-suffix <suffix>] [-P <proxy>]
+usage: python3 ForwardShell.py -url <url> [-data <post-data>] [-prefix <prefix>] [-suffix <suffix>] [-proxy <proxy>]
 
 ForwardShell v0.4.2 - Exploits a simple Web application RCE on Linux systems and builds a semiautomatic shell
 
