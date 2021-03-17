@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "ForwardShell"
-version = "0.4.2"
-description = "Exploits a simple Web application RCE on Linux systems and supports PTY upgrade, Bind- and ReveseShells, File Up- and Download"
+version = "0.4.3"
+description = "Exploits a simple Web application RCE on Linux systems and builds a semiautomatic shell. It supports a PTY upgrade, Bind- and ReverseShells with different flavours, File Up- and Download and resume orphaned sessions."
 authors = ["Alexander Sturz <alex@sturz.org>"]
 
 [tool.poetry.dependencies]
